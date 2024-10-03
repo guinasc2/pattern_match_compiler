@@ -96,17 +96,18 @@ def MLmatch (vs : List Val) (M : ClauseMatrix) : Option Action :=
       | false => MLmatch vs (ps', as)
     | _, _ => none
 
+mutual
+  def countConstrs (p : Pat) : ℕ :=
+    match p with
+    | .Wild => 0
+    | .Constr _ ps => 1 + countConstrsLine ps
+    | .Or p1 p2 => countConstrs p1 + countConstrs p2
 
-def countConstrs (p : Pat) : ℕ :=
-  match p with
-  | .Wild => 0
-  | .Constr _ _ => 1
-  | .Or p1 p2 => countConstrs p1 + countConstrs p2
-
-def countConstrsLine (ps : List Pat) : ℕ :=
-  match ps with
-  | [] => 0
-  | p :: ps' => countConstrs p + countConstrsLine ps'
+  def countConstrsLine (ps : List Pat) : ℕ :=
+    match ps with
+    | [] => 0
+    | p :: ps' => countConstrs p + countConstrsLine ps'
+end
 
 def countConstrsMatrix (M : ClauseMatrix) : ℕ :=
   match M with

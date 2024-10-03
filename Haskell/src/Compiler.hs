@@ -1,7 +1,5 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Redundant if" #-}
-{-# HLINT ignore "Use section" #-}
-{-# HLINT ignore "Avoid lambda using `infix`" #-}
+{-# HLINT ignore #-}
 
 module Compiler where
 
@@ -12,11 +10,10 @@ type Ctx = M.Map String [Constr]
 
 data Constr
   = Constr {name :: String, arity :: Int, ty :: String}
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 instance Show Constr where
-  show :: Constr -> String
-  show (Constr n a _) = n ++ " " ++ show a
+  show (Constr n a t) = t ++ "." ++ n ++ " " ++ show a
 
 exConstr1 :: Constr
 exConstr1 = Constr "nil" 0 "List"
@@ -30,7 +27,7 @@ exConstr3 = Constr "Unit" 0 "Unit"
 
 data Val
   = ValConstr Constr [Val]
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 exVal0 :: Val
 exVal0 = ValConstr exConstr3 []
@@ -49,7 +46,6 @@ data Pat
   deriving (Eq)
 
 instance Show Pat where
-  show :: Pat -> String
   show PatWild = "_"
   show (PatConstr c ps) = show c ++ " " ++ show ps
   show (PatOr p1 p2) = show p1 ++ " | " ++ show p2
@@ -134,7 +130,7 @@ mlMatch vs m =
 -}
 
 lineSpec :: Constr -> [Pat] -> Action -> Maybe ClauseMatrix
-lineSpec c [] a = Nothing
+lineSpec _ [] _ = Nothing
 lineSpec c (p:ps) a =
   case p of
     PatWild -> Just ([replicate (arity c) PatWild ++ ps], [a])
@@ -164,11 +160,11 @@ spec c m =
 
 
 lineDefault :: [Pat] -> Action -> Maybe ClauseMatrix
-lineDefault [] a = Nothing
+lineDefault [] _ = Nothing
 lineDefault (p:ps) a =
   case p of
     PatWild -> Just ([ps], [a])
-    PatConstr c' ps' -> Nothing
+    PatConstr _ _ -> Nothing
     PatOr p1 p2 ->
       case (m1, m2) of
         (Nothing, Nothing) -> Nothing
@@ -205,13 +201,13 @@ data DecisionTree
   | Fail
   | Switch Val [(Constr, DecisionTree)]
   | Swap Int DecisionTree
-  deriving (Show)
+  deriving (Show, Eq, Ord)
 
 
 allWild :: [Pat] -> Bool
 allWild [] = True
 allWild (PatWild:ps) = allWild ps
-allWild (_:ps) = False
+allWild (_:_) = False
 
 swapLin :: Int -> [a] -> [a]
 swapLin 0 l = l
@@ -237,13 +233,13 @@ findCol (l : ls) =
 
 getConstr :: Pat -> [Constr]
 getConstr PatWild = []
-getConstr (PatConstr c ps) = [c]
+getConstr (PatConstr c _) = [c]
 getConstr (PatOr p1 p2) = getConstr p1 ++ getConstr p2
 
 collectHeadMatrix :: Matrix Pat -> [Constr]
 collectHeadMatrix [] = []
 collectHeadMatrix ([]:_) = []
-collectHeadMatrix ((p:ps):ls) = getConstr p ++ collectHeadMatrix ls
+collectHeadMatrix ((p:_):ls) = getConstr p ++ collectHeadMatrix ls
 
 
 compilationScheme :: Ctx -> Occurrence -> ClauseMatrix -> DecisionTree
@@ -275,7 +271,7 @@ compilationScheme ctx (o:os) (l : ls, a : as) =
                 [] -> error "Isso não deveria acontecer"
                 o'' : os' ->
                   case o'' of
-                    ValConstr c ps -> map (compilationScheme ctx (ps ++ os')) mk
+                    ValConstr _ ps -> map (compilationScheme ctx (ps ++ os')) mk
 
 
           l' = zip s' ak

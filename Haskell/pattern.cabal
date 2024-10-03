@@ -59,7 +59,9 @@ library
     import:           warnings
 
     -- Modules exported by the library.
-    exposed-modules:  MyLib
+    exposed-modules:  
+        MyLib,
+        Compiler
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -68,7 +70,9 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.17.2.1, containers
+    build-depends:    
+        base ^>=4.17.2.1, 
+        containers
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -125,4 +129,13 @@ test-suite pattern-test
     -- Test dependencies.
     build-depends:
         base ^>=4.17.2.1,
-        pattern
+        pattern,
+        tasty,
+        tasty-hunit,
+        HUnit,
+        tasty-smallcheck,
+        tasty-quickcheck,
+        QuickCheck,
+        smallcheck,
+        random,
+        containers
