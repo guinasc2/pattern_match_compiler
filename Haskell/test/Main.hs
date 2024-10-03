@@ -23,6 +23,10 @@ unitTests = testGroup "Unit tests"
       @?= EQ
   ]
 
+-- main = do
+--   n <- fst (randomR (1, 5) (mkStdGen 123) :: (IO Int, StdGen))
+--   putStr (show (newCtx n))
+
 maxNameSize :: Int
 maxNameSize = 10
 
