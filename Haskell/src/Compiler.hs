@@ -77,17 +77,15 @@ sig cs ctx =
 instOf :: Pat -> Val -> Bool
 instOf PatWild _ = True
 instOf (PatOr p1 p2) v = instOf p1 v || instOf p2 v
-instOf (PatConstr c ps) v =
-  case v of
-    ValConstr c' vs ->
-      if c == c' then 
-        (case (ps, vs) of
-          ([], []) -> True
-          ([], _) -> False
-          (_, []) -> False
-          (p' : ps', v' : vs') ->
-            instOf p' v' && instOf (PatConstr c ps') (ValConstr c' vs'))
-      else False
+instOf (PatConstr c ps) (ValConstr c' vs) =
+  if c == c' then 
+    (case (ps, vs) of
+      ([], []) -> True
+      ([], _) -> False
+      (_, []) -> False
+      (p' : ps', v' : vs') ->
+        instOf p' v' && instOf (PatConstr c ps') (ValConstr c' vs'))
+  else False
 
 listInstOf :: [Pat] -> [Val] -> Bool
 listInstOf ps vs = and (zipWith instOf ps vs)
@@ -114,14 +112,12 @@ exClause2 = (exMatrix2, exActions)
 
 
 mlMatch :: [Val] -> ClauseMatrix -> Maybe Action
-mlMatch vs m =
-  case m of
-    (l : ls, a : as) ->
-      if listInstOf l vs then
-        Just a
-      else
-        mlMatch vs (ls, as)
-    (_, _) -> Nothing
+mlMatch vs (l:ls, a:as) =
+  if listInstOf l vs then
+    Just a
+  else
+    mlMatch vs (ls, as)
+mlMatch _ _ = Nothing
 
 
 
@@ -148,15 +144,11 @@ lineSpec c (p:ps) a =
         m2 = lineSpec c (p2:ps) a
 
 spec :: Constr -> ClauseMatrix -> ClauseMatrix
-spec c m =
-  case m of
-    (l : ls, a : as) ->
-      case newLine of
-        Nothing -> spec c (ls, as)
-        Just x -> x <> spec c (ls, as)
-      where
-        newLine = lineSpec c l a
-    (_, _) -> ([], [])
+spec c (l:ls, a:as) =
+  case (lineSpec c l a) of
+    Nothing -> spec c (ls, as)
+    Just x -> x <> spec c (ls, as)
+spec _ _ = ([], [])
 
 
 lineDefault :: [Pat] -> Action -> Maybe ClauseMatrix
@@ -176,15 +168,11 @@ lineDefault (p:ps) a =
         m2 = lineDefault (p2:ps) a
 
 defaultCM :: ClauseMatrix -> ClauseMatrix
-defaultCM m =
-  case m of
-    (l : ls, a : as) ->
-      case newLine of
-        Nothing -> defaultCM (ls, as)
-        Just x -> x <> defaultCM (ls, as)
-      where
-        newLine = lineDefault l a
-    (_, _) -> ([], [])
+defaultCM (l : ls, a : as) =
+  case lineDefault l a of
+    Nothing -> defaultCM (ls, as)
+    Just x -> x <> defaultCM (ls, as)
+defaultCM (_, _) = ([], [])
 
 -----------------------------------------------------------
 -----------------------------------------------------------
@@ -207,6 +195,7 @@ data DecisionTree
 allWild :: [Pat] -> Bool
 allWild [] = True
 allWild (PatWild:ps) = allWild ps
+allWild ((PatOr p1 p2):ps) = allWild [p1,p2] && allWild ps
 allWild (_:_) = False
 
 swapLin :: Int -> [a] -> [a]
@@ -269,9 +258,7 @@ compilationScheme ctx (o:os) (l : ls, a : as) =
 
           ak = case o' of
                 [] -> error "Isso não deveria acontecer"
-                o'' : os' ->
-                  case o'' of
-                    ValConstr _ ps -> map (compilationScheme ctx (ps ++ os')) mk
+                (ValConstr _ ps) : os' -> map (compilationScheme ctx (ps ++ os')) mk
 
 
           l' = zip s' ak

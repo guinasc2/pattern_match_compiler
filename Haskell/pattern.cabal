@@ -72,7 +72,9 @@ library
     -- Other library packages from which modules are imported.
     build-depends:    
         base ^>=4.17.2.1, 
-        containers
+        containers,
+        random,
+        mtl
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -129,13 +131,11 @@ test-suite pattern-test
     -- Test dependencies.
     build-depends:
         base ^>=4.17.2.1,
-        pattern,
+        random,
+        containers,
         tasty,
         tasty-hunit,
-        HUnit,
-        tasty-smallcheck,
         tasty-quickcheck,
-        QuickCheck,
-        smallcheck,
-        random,
-        containers
+        HUnit,
+        QuickCheck, 
+        pattern
