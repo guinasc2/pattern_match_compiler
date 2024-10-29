@@ -221,23 +221,35 @@ chooseConstr ctx =
 countPat :: Pat -> Int
 countPat PatWild = 0
 countPat (PatConstr _ ps) = 1 + countPatLine ps
-countPat (PatOr p1 p2) = (countPat p1) + (countPat p2)
+countPat (PatOr p1 p2) = countPat p1 + countPat p2
 
 countPatLine :: [Pat] -> Int
 countPatLine [] = 0
 countPatLine (p:ps) = countPat p + countPatLine ps
 
-
 countPatMat :: ClauseMatrix -> Int
 countPatMat ([], []) = 0
-countPatMat (l:ls, _:as) = countPatLine' l + countPatMat (ls, as)
+countPatMat (l:ls, _:as) = countPatLine l + countPatMat (ls, as)
 countPatMat _ = 0
 
-countPatCM :: ClauseMatrix -> Int
-countPatCM (m, a) = foldl (+) 0 (map countPat uniqueM)
+countPatCMUnique :: ClauseMatrix -> Int
+countPatCMUnique (m, a) = foldr (+) 0 (map countPat uniqueM)
   where
     uniqueLine = nubBy (\x y -> snd x == snd y) (zip m a)
     uniqueM = concatMap fst uniqueLine
+
+
+countOr :: Pat -> Int
+countOr PatWild = 0
+countOr (PatConstr _ ps) = foldr (+) 0 (map countOr ps)
+countOr (PatOr p1 p2) = 1 + countOr p1 + countOr p2
+
+countPatCM :: ClauseMatrix -> (Int, Int)
+countPatCM (m, _) = (nPat, nOr)
+  where
+    nPat = foldr (+) 0 (map countPat (concat m))
+    nOr = foldr (+) 0 (map countOr (concat m))
+
 
 prop_specReduces :: Property
 prop_specReduces =
@@ -247,5 +259,5 @@ prop_specReduces =
     \maxPatSize -> forAll genCtx $
     \ctx -> forAll (chooseConstr ctx) $
     \c -> forAll (genCM ctx lin col maxPatSize) $
-    -- \m -> not (allWild (head (transpose (fst m)))) ==> countPatMat (spec c m) < countPatMat m
-    \m -> not (allWild (head (transpose (fst m)))) ==> countPatCM (spec c m) < countPatCM m
+    \m -> not (allWild (head (transpose (fst m)))) ==> countPatCMUnique (spec c m) < countPatCMUnique m
+    -- \m -> not (allWild (head (transpose (fst m)))) ==> countPatCM (spec c m) < countPatCM m

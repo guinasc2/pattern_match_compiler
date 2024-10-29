@@ -7,16 +7,32 @@ open Mathlib
 structure Constr where
   name : String
   arity : ℕ
+  ty : String
   deriving DecidableEq, Repr
 
 instance : Repr Constr where
-  reprPrec c _n := c.name ++ " " ++ toString c.arity
+  reprPrec c _n := c.ty ++ "." ++ c.name ++ " " ++ toString c.arity
 
-def exConstr1 : Constr := Constr.mk "List.nil" 0
-def exConstr2 : Constr := Constr.mk "List.cons" 2
+def exConstr1 : Constr := Constr.mk "nil" 0 "List"
+def exConstr2 : Constr := Constr.mk "cons" 2 "List"
 
 #eval exConstr1
 #eval exConstr2
+
+
+abbrev Ctx := Std.HashMap String (List Constr)
+
+
+def sig (t : List Constr) (ctx : Ctx) : Bool :=
+  match t with
+  | [] => False
+  | t' =>
+    match List.map (λ x => x.ty) t' with
+    | [c] =>
+      match ctx[c]? with
+      | some x => List.isPerm t x
+      | none => False
+    | _ => False
 
 
 inductive Val where
@@ -71,19 +87,13 @@ abbrev Matrix α := List (List α)
 abbrev ClauseMatrix := Matrix Pat × List Action
 
 
-def exMatrix : Matrix Pat := [
-  [exPat1, Pat.Wild],
-  [Pat.Wild, exPat1],
-  [exPat2, exPat2]
-  ]
-
-def exMatrix2 : Matrix Pat := [
-  [exPat1, Pat.Wild],
-  [Pat.Wild, exPat1],
-  [Pat.Wild, Pat.Wild]
-  ]
+def exMatrix : Matrix Pat := [[exPat1, Pat.Wild], [Pat.Wild, exPat1], [exPat2, exPat2]]
+def exMatrix2 : Matrix Pat := [[exPat1, Pat.Wild], [Pat.Wild, exPat1], [Pat.Wild, Pat.Wild]]
 
 def exActions : List Action := [1, 2, 3]
+
+def exClause1 : ClauseMatrix := (exMatrix, exActions)
+def exClause2 : ClauseMatrix := (exMatrix2, exActions)
 
 
 def MLmatch (vs : List Val) (M : ClauseMatrix) : Option Action :=
@@ -95,34 +105,6 @@ def MLmatch (vs : List Val) (M : ClauseMatrix) : Option Action :=
       | true => a
       | false => MLmatch vs (ps', as)
     | _, _ => none
-
-mutual
-  def countConstrs (p : Pat) : ℕ :=
-    match p with
-    | .Wild => 0
-    | .Constr _ ps => 1 + countConstrsLine ps
-    | .Or p1 p2 => countConstrs p1 + countConstrs p2
-
-  def countConstrsLine (ps : List Pat) : ℕ :=
-    match ps with
-    | [] => 0
-    | p :: ps' => countConstrs p + countConstrsLine ps'
-end
-
-def countConstrsMatrix (M : ClauseMatrix) : ℕ :=
-  match M with
-  | ⟨MP, A⟩ =>
-    match MP, A with
-    | [], _ => 0
-    | l :: ls, _a :: as =>
-      match l with
-      | [] => 0
-      | _p :: _ps =>
-        countConstrsLine l + countConstrsMatrix (ls, as)
-    | _, _ => 0
-
-#eval exMatrix
-#eval countConstrsMatrix (exMatrix, exActions)
 
 
 /-
@@ -145,17 +127,15 @@ def lineSpec
           | .Constr c' ps' =>
             match decEq c c' with
             | isFalse _ => none
-            -- No caso do isTrue, acho que deveria pegar as variáveis, mas elas foram abstraídas para _
-            -- No próprio ex do merge do artigo parece acontecer isso
             | isTrue _ => ([ps' ++ ps], [a])
           | .Or p1 p2 =>
             let m1 := lineSpec c (p1 :: ps) a
             let m2 := lineSpec c (p2 :: ps) a
             match m1, m2 with
             | none, none => none
-            | some m1, none => m1
-            | none, some m2 => m2
-            | some m1, some m2 => m1 ++ m2
+            | some m1', none => m1'
+            | none, some m2' => m2'
+            | some m1', some m2' => m1' ++ m2'
 
 def spec (c : Constr) (M : ClauseMatrix) : ClauseMatrix :=
   match M with
@@ -168,136 +148,12 @@ def spec (c : Constr) (M : ClauseMatrix) : ClauseMatrix :=
       | some x => x ++ spec c (ls, as)
     | _, _ => ([], [])
 
-#eval spec exConstr1 (exMatrix, exActions)
-#eval spec exConstr2 (exMatrix, exActions)
 
-#eval spec exConstr1 (exMatrix2, exActions)
-#eval spec exConstr2 (exMatrix2, exActions)
+#eval spec exConstr1 exClause1
+#eval spec exConstr2 exClause1
+#eval spec exConstr1 exClause2
+#eval spec exConstr2 exClause2
 
-
-def instOfConst (p : Pat) (c : Constr) : Bool :=
-  match p with
-  | .Wild => true
-  | .Or p1 p2 => instOfConst p1 c || instOfConst p2 c
-  | .Constr c' _ps => c = c'
-
-
-def instInduction (P : Pat → Prop)
-  (p : Pat)
-  (c : Constr)
-  (wild : ∀ p, p = Pat.Wild → P p)
-  (constr : ∀ p ps, p = Pat.Constr c ps → P p)
-  (or : ∀ p p1 p2, p = Pat.Or p1 p2 → P p1 → P p2 → P p)
-  : P p :=
-    match p with
-    | Pat.Wild => wild Pat.Wild rfl
-    | Pat.Constr c' ps => constr (Pat.Constr c' ps) ps
-    | Pat.Or p1 p2 =>
-      or (Pat.Or p1 p2) p1 p2 rfl (instInduction P p1 c wild constr or) (instInduction P p2 c wild constr or)
-
-#print Pat.rec
-lemma teste :
-  ∀ p c ls a, instOfConst p c = true → lineSpec c (p::ls) a ≠ none := by
-    -- intros p
-    -- induction p with
-    -- | Wild =>
-    --   intros c ls a H
-    --   simp [lineSpec.eq_def]
-    -- | Constr c' ps =>
-    --   intros c ls a H
-    --   simp [lineSpec.eq_def]
-    --   split
-    --   simp [instOfConst] at H
-    --   contradiction
-    --   simp
-    -- | Or p1 p2 =>
-    --   intros c ls a H
-
-    --   sorry
-    -- apply (Pat.rec _ (λ ps => ∀ p, p ∈ ps → instOfConst p c = true → lineSpec c (p::ls) a ≠ none))
-    apply Pat.rec
-    ·
-      intros c ls a H
-      simp [lineSpec]
-    ·
-      intros c ps m c' ps' a H
-      simp [lineSpec]
-      split
-      simp [instOfConst] at H
-      contradiction
-      simp
-    ·
-      intros p1 p2 IH1 IH2 c ps a H
-      simp [lineSpec]
-      split
-      ·
-        simp [instOfConst] at H
-        rcases H with H | H
-        have t := IH1 c ps a H
-        contradiction
-        have t := IH2 c ps a H
-        contradiction
-      ·
-        simp
-      ·
-        simp
-      ·
-        simp
-    ·
-      sorry
-    ·
-      intros p ps H H1
-      sorry
-    ·
-      sorry
-
-
-lemma lineSpecEmpty :
-  ∀ c l ls a, instOfConst l c = true → ∃ x xs as, lineSpec c (l::ls) a = some (x::xs, as) := by
-    intros c l ls a
-    rw [lineSpec.eq_def]
-    simp
-    cases l
-    ·
-      simp
-    ·
-      rename_i c' ps
-      intros H
-      simp
-      split
-      <;> simp [instOfConst] at H
-      contradiction
-      exists List.replicate c.arity Pat.Wild ++ ls
-      exists []
-      exists [a]
-    ·
-      rename_i p1 p2
-      simp
-      split
-      intros H
-      rw [lineSpec.eq_def] at *
-      simp [instOfConst] at *
-      cases H
-      repeat sorry
-
-lemma lineSpecReduces :
-  ∀ l c a,
-    lineSpec c l a = some x →
-    countConstrsMatrix x < countConstrsLine l := by
-      intros l
-      induction l with
-      | nil =>
-        intros c a H
-        simp [lineSpec] at *
-      | cons l' ls IH =>
-        intros c a H
-        simp [lineSpec, countConstrsLine]
-        sorry
-
-
-lemma specReduces : ∀ m c, countConstrsMatrix (spec c m) < countConstrsMatrix m := by
-  intros m c
-  sorry
 
 -----------------------------------------------------------
 -----------------------------------------------------------
@@ -317,9 +173,9 @@ def lineDefault
             let m2 := lineDefault (p2 :: ps) a
             match m1, m2 with
             | none, none => none
-            | some m1, none => m1
-            | none, some m2 => m2
-            | some m1, some m2 => m1 ++ m2
+            | some m1', none => m1'
+            | none, some m2' => m2'
+            | some m1', some m2' => m1' ++ m2'
 
 def default
       (M : ClauseMatrix)
@@ -334,9 +190,9 @@ def default
             | some x => x ++ default (ls, as)
           | _, _ => ([], [])
 
-#eval default (exMatrix, exActions)
 
-#eval default (exMatrix2, exActions)
+#eval default exClause1
+#eval default exClause2
 
 
 -----------------------------------------------------------
@@ -348,15 +204,12 @@ def default
 -/
 
 
--- Daria pra representar isso como List Int?
-inductive Occurrence where
-| Empty : Occurrence
-| Sequence : ℤ → Occurrence → Occurrence
+abbrev Occurrence := List Val
 
 inductive DecisionTree where
 | Leaf : Action → DecisionTree
 | Fail : DecisionTree
-| Switch : List (Constr × DecisionTree) → DecisionTree
+| Switch : Val → List (Constr × DecisionTree) → DecisionTree
 | Swap : Int → DecisionTree → DecisionTree
 deriving Repr
 
@@ -371,12 +224,17 @@ def allWild (ps : List Pat) : Bool :=
   | p :: ps' =>
     match p with
     | .Wild => allWild ps'
+    -- TODO: tá avalidando ps' duas vezes. Como melhorar?
+    -- Lean reclamou disso:
+    -- allWild [p1, p2] && allWild ps'
+    | .Or p1 p2 => allWild (p1::ps') && allWild (p2::ps')
     | _ => false
 
 def swapLine (n : ℕ) (l : List α) : List α :=
-  match l with
-  | [] => []
-  | (l' :: ls) =>
+  match n, l with
+  | 0, _ => l
+  | _, [] => []
+  | n, (l' :: ls) =>
     have x : Fin (l'::ls).length := Fin.ofNat 0
     have x' : Fin (l'::ls).length := Fin.ofNat n
     have i := List.get (l'::ls) x
@@ -384,7 +242,9 @@ def swapLine (n : ℕ) (l : List α) : List α :=
     List.set (List.set (l'::ls) x i') x' i
 
 def swapColumn (n : ℕ) (l : Matrix α) : Matrix α :=
-  List.transpose (swapLine n (List.transpose l))
+  match n with
+  | 0 => l
+  | _ => List.transpose (swapLine n (List.transpose l))
 
 
 def findColumn (M : Matrix Pat) : ℕ :=
@@ -417,42 +277,89 @@ def collectHeadMatrix (m : Matrix Pat) : List Constr :=
 #eval collectHeadMatrix exMatrix
 
 
-def CompilationScheme (o : List Occurrence) (M : ClauseMatrix) : DecisionTree :=
+
+mutual
+  def countConstrs (p : Pat) : ℕ :=
+    match p with
+    | .Wild => 0
+    | .Constr _ ps => 1 + countConstrsLine ps
+    | .Or p1 p2 => countConstrs p1 + countConstrs p2
+
+  def countConstrsLine (ps : List Pat) : ℕ :=
+    match ps with
+    | [] => 0
+    | p :: ps' => countConstrs p + countConstrsLine ps'
+end
+
+def countConstrsMatrix (M : ClauseMatrix) : ℕ :=
+  match M with
+  | ⟨MP, A⟩ =>
+    match MP, A with
+    | [], _ => 0
+    | l :: ls, _a :: as =>
+      match l with
+      | [] => 0
+      | _p :: _ps =>
+        countConstrsLine l + countConstrsMatrix (ls, as)
+    | _, _ => 0
+
+#eval exMatrix
+#eval countConstrsMatrix (exMatrix, exActions)
+
+lemma specReduces : ∀ m c, m.1 ≠ [] → countConstrsMatrix (spec c m) < countConstrsMatrix m := by
+  intros m c H
+  obtain ⟨m, as⟩ := m
+  induction m with
+  | nil =>
+    contradiction
+  | cons l ls IH =>
+    sorry
+
+
+
+def CompilationScheme (ctx : Ctx) (os : Occurrence) (M : ClauseMatrix) : DecisionTree :=
   match M with
   | ⟨ MP, A ⟩ =>
-    match MP, A with
-    | [], [] => .Fail -- m = 0
-    | l :: ls, a :: as =>
+    match os, MP, A with
+    | _, [], [] => .Fail -- m = 0
+    | o :: os', l :: ls, a :: as =>
       match allWild l with
       | true => .Leaf a -- m > 0; primeira linha tem apenas _
       | false =>
         match l with
         | [] => .Leaf a -- m > 0; n = 0
         | p :: ps => -- m > 0; n > 0
+
           let i := findColumn (List.transpose (l::ls))
-          let m' := match i with
-                      | 0 => l::ls -- primeira coluna
-                      | n => swapColumn n (l::ls) -- coluna i > 0, faz a troca
+          let m' := swapColumn i (l::ls) -- coluna i > 0, faz a troca
+          let o' := swapLine i (o::os') -- coluna i > 0, faz a troca
 
-          let S := collectHeadMatrix m'
-          let Mk := List.map (flip spec (m', a::as)) S
-          -- TODO: S deve ter elementos distintos
-          -- TODO: Precisa incluir a matriz default se S não for uma assinatura
-          -- Como checar se S é um assinatura?
+          -- valeria mais a pena só não inserir elementos repetidos?
+          let S := List.eraseDups (collectHeadMatrix m')
+          let x := sig S ctx
 
-          -- TODO: Ak precisa mudar
-          --    trocar o₁ por o₁·1 ... o₁·a
-          let Ak := List.map (CompilationScheme o) Mk
+          let Mk := if x then List.map (flip spec (m', a::as)) S
+                    else List.map (flip spec (m', a::as)) S ++ [default (m', a::as)]
+          let S' := if x then S
+                    else S ++ [Constr.mk "*" 0 "default"]
 
-          let L := List.zip S Ak
+          let Ak := match o' with
+                    -- Isso não deveria acontecer
+                    -- Não acho que essa seja a melhor solução
+                    | [] => []
+                    -- | [] => Lean.throwError "Isso não deveria acontecer"
+                    | (.Constr _ ps)::os'' => List.map (CompilationScheme ctx (ps ++ os'')) Mk
+
+          let L := List.zip S' Ak
 
           match i with
-          | 0 => .Switch L
-          | n => .Swap n (.Switch L)
+          | 0 => .Switch o L
+          | n => .Swap (n+1) (.Switch o L)
+
     -- Se tiver linha na matriz, mas não tiver ação para tomar, tem erro na entrada
     -- Acho que, dada uma entrada correta, nunca deveria chegar aqui
     -- Entrada correta: número de linhas da matriz = número de ações
-    | _, _ => .Fail
+    | _, _, _ => .Fail
   -- termination_by
   --   countConstrsMatrix M
   -- decreasing_by

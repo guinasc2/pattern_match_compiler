@@ -240,7 +240,8 @@ compilationScheme ctx (o:os) (l : ls, a : as) =
         Leaf a
       else
         if i == 0 then
-          Switch o l'
+          -- TODO: talvez não seja esse 'o' que deva entrar aqui
+          Switch o l' 
         else
           Swap (i+1) (Switch o l')
         where
@@ -248,9 +249,9 @@ compilationScheme ctx (o:os) (l : ls, a : as) =
           m' = swapCol i (l:ls)
           o' = swapLin i (o:os)
           
+          s = nub (collectHeadMatrix m')
           x = sig s ctx
 
-          s = nub (collectHeadMatrix m')
           mk = if x then map (flip spec (m', a:as)) s
                else map (flip spec (m', a:as)) s ++ [defaultCM (m', a:as)]
           s' = if x then s
