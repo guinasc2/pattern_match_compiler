@@ -306,7 +306,22 @@ def countConstrsMatrix (M : ClauseMatrix) : ℕ :=
 #eval exMatrix
 #eval countConstrsMatrix (exMatrix, exActions)
 
-lemma specReduces : ∀ m c, m.1 ≠ [] → countConstrsMatrix (spec c m) < countConstrsMatrix m := by
+mutual
+  def procOr (M : ClauseMatrix) : ClauseMatrix :=
+    match M with
+    | ⟨MP, A⟩ =>
+      match MP, A with
+      | l::ls, a::as => lineProcOr l a ++ procOr (ls, as)
+      | _, _ => ([], [])
+
+  def lineProcOr (ps : List Pat) (a : Action) : ClauseMatrix :=
+    match ps with
+    | [] => ([], [])
+    | (.Or p1 p2)::ps' => lineProcOr (p1::ps') a ++ lineProcOr (p2::ps') A
+    | ps => ([ps], [a])
+end
+
+lemma specReduces : ∀ m c, m.1 ≠ [] → countConstrsMatrix (spec c m) < countConstrsMatrix (procOr m) := by
   intros m c H
   obtain ⟨m, as⟩ := m
   induction m with

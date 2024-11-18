@@ -233,10 +233,10 @@ countPatMat (l:ls, _:as) = countPatLine l + countPatMat (ls, as)
 countPatMat _ = 0
 
 countPatCMUnique :: ClauseMatrix -> Int
-countPatCMUnique (m, a) = foldr (+) 0 (map countPat uniqueM)
+countPatCMUnique (m, a) = countPatMat uniqueM
   where
     uniqueLine = nubBy (\x y -> snd x == snd y) (zip m a)
-    uniqueM = concatMap fst uniqueLine
+    uniqueM = unzip uniqueLine
 
 
 countOr :: Pat -> Int
@@ -251,6 +251,44 @@ countPatCM (m, _) = (nPat, nOr)
     nOr = foldr (+) 0 (map countOr (concat m))
 
 
+lineProcOr :: [Pat] -> Action -> ClauseMatrix
+lineProcOr [] _ = ([], [])
+lineProcOr ((PatOr p1 p2):ps) a = lineProcOr (p1:ps) a <> lineProcOr (p2:ps) a
+lineProcOr ps a = ([ps], [a])
+
+procOr :: ClauseMatrix -> ClauseMatrix
+procOr (l:ls, a:as) = (lineProcOr l a) <> procOr (ls, as)
+procOr _ = ([], [])
+
+
+{- 
+-- Teste para processar Or em toda a matriz
+
+toList :: Pat -> [Pat]
+toList (PatOr p1 p2) = toList p1 ++ toList p2
+toList p = [p]
+
+addPat :: Pat -> ClauseMatrix -> ClauseMatrix
+addPat p (m, a) = (m', a)
+  where
+    ps = replicate (length m) p
+    m' = transpose (ps : transpose m)
+
+addListPat :: [Pat] -> ClauseMatrix -> ClauseMatrix
+addListPat ps (m, a) = (m', a)
+  where
+    ps' = map (replicate (length m)) ps
+    m' = transpose (transpose ps' ++ transpose m)
+
+addListPat' :: [Pat] -> ClauseMatrix -> ClauseMatrix
+addListPat' ps m = foldr addPat m ps
+
+teste :: [Pat] -> Action -> ClauseMatrix
+teste ps a = foldr addListPat ([[]], [a]) ps'
+  where
+    ps' = map toList ps
+-}
+
 prop_specReduces :: Property
 prop_specReduces =
   forAll (choose (1,7)) $
@@ -259,5 +297,57 @@ prop_specReduces =
     \maxPatSize -> forAll genCtx $
     \ctx -> forAll (chooseConstr ctx) $
     \c -> forAll (genCM ctx lin col maxPatSize) $
-    \m -> not (allWild (head (transpose (fst m)))) ==> countPatCMUnique (spec c m) < countPatCMUnique m
-    -- \m -> not (allWild (head (transpose (fst m)))) ==> countPatCM (spec c m) < countPatCM m
+    \m -> not (allWild (head (transpose (fst m)))) ==> countPatMat (spec c m) < countPatMat (procOr m)
+
+
+-- pré processar Or preserva semântica
+
+genValConstr :: [Constr] -> Int -> Gen Val
+genValConstr t n =
+  do
+    c <- elements t
+    let a = arity c
+    ps <- replicateM a (genVal t (n-1))
+    return (ValConstr c ps)
+
+genVal :: [Constr] -> Int -> Gen Val
+genVal _ 0 = return (ValConstr (Constr "Unit" 0 "Unit") [])
+genVal t n = frequency [(30, return (ValConstr (Constr "Unit" 0 "Unit") [])), (70, genValConstr t n)]
+
+genVal' :: Gen Val
+genVal' =
+  do
+    (_, cs) <- genType
+    n <- choose (1, 4)
+    genVal cs n
+
+genListVal :: [[Constr]] -> Int -> Gen Val
+genListVal cs valSize = 
+  do
+    cs' <- elements cs
+    genVal cs' valSize
+
+genOccurrence :: Ctx -> Int -> Int -> Gen Occurrence
+genOccurrence ctx n valSize =
+  do
+    ts <- vectorOf n (elements (M.toList ctx))
+    let cs = map snd ts
+    vectorOf n (genListVal cs valSize)
+
+genOccurrence' :: Gen Occurrence
+genOccurrence' =
+  do
+    ctx <- genCtx
+    n <- choose (1, 5)
+    maxValSize <- choose (1, 4)
+    genOccurrence ctx n maxValSize
+
+prop_procOrPreserves :: Property
+prop_procOrPreserves = 
+  forAll (choose (1,2)) $
+    \lin -> forAll (choose (1,2)) $
+    \col -> forAll (choose (1,2)) $
+    \maxPatSize -> forAll genCtx $
+    \ctx -> forAll (genCM ctx lin col maxPatSize) $
+    \m -> forAll (genOccurrence ctx col maxPatSize) $
+    \o -> mlMatch o m == mlMatch o (procOr m)
